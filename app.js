@@ -17,7 +17,6 @@ const findOrCreate = require("mongoose-findorcreate");
 const app = express();
 
 // console.log(process.env.API_KEY);
-
 app.set('view engine', 'ejs');
 app.use(bodyParser.urlencoded({extended: true}));
 app.use(express.static("public"));
@@ -37,7 +36,8 @@ mongoose.connect("mongodb://127.0.0.1:27017/userDB", {useNewUrlParser: true});
 const userSchema = new mongoose.Schema ({
   email: String,
   password: String,
-  googleId: String
+  googleId: String,
+  secret: String
 });
 
 userSchema.plugin(passportLocalMangoose);
@@ -45,7 +45,7 @@ userSchema.plugin(findOrCreate);
 
 // userSchema.plugin(encrypt, {secret: process.env.SECRET, encryptedFields: ['password'] });
 
-User = mongoose.model('User', userSchema);
+const User = new mongoose.model("User", userSchema);
 
 passport.use(User.createStrategy());
 
@@ -62,7 +62,7 @@ passport.use(new GoogleStrategy({
     clientID:     process.env.CLIENT_ID,
     clientSecret: process.env.CLIENT_SECRET,
     callbackURL: "http://localhost:3000/auth/google/secrets",
-    passReqToCallback   : true,
+    // passReqToCallback   : true
     userProfileURL: "https://www.googleapis.com/oauth2/v3/userinfo"
   },
   function(request, accessToken, refreshToken, profile, done) {
@@ -77,15 +77,8 @@ app.get("/", function(req, res){
   res.render("home");
 });
 
-app.get("/login", function(req, res){
-  res.render("login");
-});
-
-app.get("/register", function(req, res){
-  res.render("register");
-});
-
 app.get("/auth/google", function(req, res){
+  console.log("auth google is called");
   passport.authenticate("google", {scope: ["profile"]});
 });
 
@@ -94,11 +87,52 @@ app.get("/auth/google/secrets", passport.authenticate("google", {
   failureRedirect: "/login"
 }));
 
-app.get("/secrets", function(req, res){
-  if (req.isAuthenticated()){
-    res.render("secrets");
-  }
+app.get("/login", function(req, res){
+  res.render("login");
 });
+
+app.get("/register", function(req, res){
+  res.render("register");
+});
+
+app.get("/secrets", function(req, res){
+  User.find({secret: {$ne: null}}, function(err, foundUsers){
+    if (err){
+      console.log(err);
+    } else {
+      if (foundUsers){
+        console.log("found user", foundUsers);
+        res.render("secrets", {usersWithSecrets: foundUsers});
+      } else {
+        console.log("not found user");
+        res.render("secrets");
+      }
+    }
+  });
+});
+
+app.post("/submit", function(req, res){
+  const submittedSecret = req.body.secret;
+
+  User.findById( req.user.id, function(err, foundUser){
+    if(err){
+      console.log(err);
+    } else {
+      if (foundUser) {
+        foundUser.secret = submittedSecret;
+        foundUser.save(function(){
+          res.redirect("/secrets");
+        })
+      }
+    }
+  });
+
+});
+
+app.get("/submit", function(req, res){
+  res.render("submit");
+});
+
 
 app.get("/logout", function(req, res){
   req.logout(function(err){
@@ -122,6 +156,8 @@ app.post("/register", function(req, res){
       });
     }
   });
+
+
 
 
   // bcrypt.hash(req.body.password, saltRounds, function(err, hash){
